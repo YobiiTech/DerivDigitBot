@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+tick_history.csv
+*.save
+*.save.*
+dashboard_backup.py
+dashboard_before_feed_monitor.py
+dashboard_pre_health.py
