@@ -1,13 +1,17 @@
 import os
+import logging
 from flask import Flask, Response, jsonify
 from dashboard import build_dashboard
 from cloud_collector import get_status, start_collector
 
 app = Flask(__name__)
 
+logger = logging.getLogger(__name__)
+
 
 if os.environ.get("START_CLOUD_COLLECTOR", "").lower() == "true":
-    start_collector()
+    started = start_collector()
+    logger.warning("COLLECTOR START: pid=%s started=%s", os.getpid(), started)
 
 
 @app.after_request
@@ -35,7 +39,9 @@ def health():
 
 @app.route("/feed-status")
 def feed_status():
-    return jsonify(get_status())
+    status = get_status()
+    logger.warning("FEED STATUS REQUEST: pid=%s status=%s ticks=%s", os.getpid(), status["status"], status["ticks_received"])
+    return jsonify(status)
 
 
 if __name__ == "__main__":
