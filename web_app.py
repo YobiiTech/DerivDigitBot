@@ -1,8 +1,14 @@
 import os
 from flask import Flask, Response, jsonify
 from dashboard import build_dashboard
+from cloud_collector import get_status, start_collector
 
 app = Flask(__name__)
+
+
+if os.environ.get("START_CLOUD_COLLECTOR", "").lower() == "true":
+    start_collector()
+
 
 @app.after_request
 def security_headers(response):
@@ -12,14 +18,25 @@ def security_headers(response):
     response.headers["Cache-Control"] = "no-store"
     return response
 
+
 @app.route("/")
 def home():
     page = build_dashboard()
     return Response(page, mimetype="text/html")
 
+
 @app.route("/healthz")
 def health():
-    return jsonify({"status": "ok", "application": "Deriv Digit Intelligence"})
+    return jsonify({
+        "status": "ok",
+        "application": "Deriv Digit Intelligence"
+    })
+
+
+@app.route("/feed-status")
+def feed_status():
+    return jsonify(get_status())
+
 
 if __name__ == "__main__":
     app.run(
