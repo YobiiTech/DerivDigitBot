@@ -68,8 +68,19 @@ async def collect_forever():
 
                 update_status(status="CONNECTED")
                 print("Deriv connection established.", flush=True)
+                print("Waiting for Deriv subscription response and ticks...", flush=True)
+
+                message_count = 0
 
                 async for message in ws:
+                    message_count += 1
+
+                    if message_count <= 5:
+                        print(
+                            f"DERIV MESSAGE {message_count}: {message[:500]}",
+                            flush=True,
+                        )
+
                     response = json.loads(message)
 
                     if "error" in response:
@@ -96,6 +107,16 @@ async def collect_forever():
                         _status["last_digit"] = digit
                         _status["last_tick"] = timestamp
                         _status["last_error"] = None
+
+            print(
+                f"Deriv connection closed normally after {message_count} messages.",
+                flush=True,
+            )
+
+            update_status(
+                status="RECONNECTING",
+                last_error="Connection closed without an exception",
+            )
 
         except Exception as error:
             update_status(
