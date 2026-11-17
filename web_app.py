@@ -2,16 +2,13 @@ import os
 import logging
 from flask import Flask, Response, jsonify
 from dashboard import build_dashboard
-from cloud_collector import get_status, start_collector
+from cloud_collector import get_status
 
 app = Flask(__name__)
 
 logger = logging.getLogger(__name__)
 
 
-if os.environ.get("START_CLOUD_COLLECTOR", "").lower() == "true":
-    started = start_collector()
-    logger.warning("COLLECTOR START: pid=%s started=%s", os.getpid(), started)
 
 
 @app.after_request
