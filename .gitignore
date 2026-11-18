@@ -10,3 +10,11 @@ tick_history.csv
 dashboard_backup.py
 dashboard_before_feed_monitor.py
 dashboard_pre_health.py
+
+# Local SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm

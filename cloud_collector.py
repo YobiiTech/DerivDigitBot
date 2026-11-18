@@ -1,15 +1,14 @@
 import asyncio
-import csv
 import json
-import os
 import threading
 from datetime import datetime, timezone
 
 import websockets
 
+import storage
+
 DERIV_WS_URL = "wss://api.derivws.com/trading/v1/options/ws/public"
 SYMBOL = "R_100"
-CSV_FILE = os.environ.get("CSV_FILE", "tick_history.csv")
 
 _lock = threading.Lock()
 _started = False
@@ -36,16 +35,7 @@ def update_status(**values):
 
 
 def save_tick(timestamp, price, digit):
-    file_exists = os.path.isfile(CSV_FILE)
-
-    with open(CSV_FILE, "a", newline="") as file:
-        writer = csv.writer(file)
-
-        if not file_exists or os.path.getsize(CSV_FILE) == 0:
-            writer.writerow(["timestamp", "symbol", "price", "digit"])
-
-        writer.writerow([timestamp, SYMBOL, price, digit])
-        file.flush()
+    storage.save_tick(timestamp, SYMBOL, price, digit)
 
 
 async def collect_forever():
@@ -130,6 +120,8 @@ async def collect_forever():
 
 def start_collector():
     global _started
+
+    storage.init_db()
 
     with _lock:
         if _started:

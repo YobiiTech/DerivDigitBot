@@ -1,42 +1,20 @@
 
-import csv
 import html
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import math
 
-CSV_FILE = "tick_history.csv"
+import storage
+
 HOST = "127.0.0.1"
 PORT = 8000
 ANALYSIS_SYMBOL = "R_100"
 
 
 def load_data():
-    records = []
-
-    try:
-        with open(CSV_FILE, "r", newline="") as file:
-            reader = csv.DictReader(file)
-
-            for row in reader:
-                try:
-                    digit = int(row["digit"])
-
-                    if 0 <= digit <= 9:
-                        records.append({
-                            "timestamp": row["timestamp"],
-                            "symbol": row["symbol"],
-                            "price": float(row["price"]),
-                            "digit": digit
-                        })
-                except (ValueError, KeyError):
-                    continue
-
-    except FileNotFoundError:
-        pass
-
-    return records
+    storage.init_db()
+    return storage.load_ticks()
 
 
 def frequency_table(digits):
