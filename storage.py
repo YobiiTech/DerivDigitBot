@@ -159,22 +159,38 @@ def import_csv(csv_path):
             if not reader.fieldnames or not required.issubset(reader.fieldnames):
                 raise ValueError("CSV is missing required columns")
 
-            for row in reader:
-                digit = int(row["digit"])
-                price = float(row["price"])
+            def validated_rows():
+                for row in reader:
+                    digit = int(row["digit"])
+                    price = float(row["price"])
 
-                if not row["timestamp"] or not row["symbol"]:
-                    raise ValueError("Missing timestamp or symbol")
+                    if not row["timestamp"] or not row["symbol"]:
+                        raise ValueError("Missing timestamp or symbol")
 
-                if not 0 <= digit <= 9:
-                    raise ValueError("Invalid digit in CSV")
+                    if not 0 <= digit <= 9:
+                        raise ValueError("Invalid digit in CSV")
 
-                _execute(connection, """
-                    INSERT INTO ticks (timestamp, symbol, price, digit)
-                    VALUES (?, ?, ?, ?)
-                """, (row["timestamp"], row["symbol"], price, digit))
+                    yield (
+                        row["timestamp"],
+                        row["symbol"],
+                        price,
+                        digit
+                    )
 
-                imported += 1
+            if _is_postgres():
+                with connection.cursor().copy(
+                    "COPY ticks (timestamp, symbol, price, digit) FROM STDIN"
+                ) as copy:
+                    for values in validated_rows():
+                        copy.write_row(values)
+                        imported += 1
+            else:
+                for values in validated_rows():
+                    _execute(connection, """
+                        INSERT INTO ticks (timestamp, symbol, price, digit)
+                        VALUES (?, ?, ?, ?)
+                    """, values)
+                    imported += 1
 
         _execute(connection, """
             INSERT INTO import_batches
