@@ -4,14 +4,45 @@ import os
 import sqlite3
 from contextlib import contextmanager
 
-DATABASE_PATH = os.environ.get("DATABASE_PATH", "tick_history.db")
+
+def _database_url():
+    url = os.environ.get("DATABASE_URL", "").strip()
+
+    # Support older PostgreSQL URL prefixes.
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+
+    return url or None
+
+
+def _is_postgres():
+    return _database_url() is not None
 
 
 @contextmanager
 def get_connection():
-    connection = sqlite3.connect(DATABASE_PATH, timeout=30)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA busy_timeout = 30000")
+    database_url = _database_url()
+
+    if database_url:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        connection = psycopg.connect(
+            database_url,
+            row_factory=dict_row,
+            connect_timeout=10
+        )
+    else:
+        database_path = os.environ.get(
+            "DATABASE_PATH", "tick_history.db"
+        )
+
+        connection = sqlite3.connect(
+            database_path,
+            timeout=30
+        )
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA busy_timeout = 30000")
 
     try:
         yield connection
@@ -23,9 +54,26 @@ def get_connection():
         connection.close()
 
 
+def _execute(connection, query, parameters=()):
+    if _is_postgres():
+        query = query.replace("?", "%s")
+
+    return connection.execute(query, parameters)
+
+
 def init_db():
-    with get_connection() as connection:
-        connection.execute("""
+    if _is_postgres():
+        ticks_schema = """
+            CREATE TABLE IF NOT EXISTS ticks (
+                id BIGSERIAL PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                price DOUBLE PRECISION NOT NULL,
+                digit SMALLINT NOT NULL CHECK (digit BETWEEN 0 AND 9)
+            )
+        """
+    else:
+        ticks_schema = """
             CREATE TABLE IF NOT EXISTS ticks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp TEXT NOT NULL,
@@ -33,14 +81,17 @@ def init_db():
                 price REAL NOT NULL,
                 digit INTEGER NOT NULL CHECK (digit BETWEEN 0 AND 9)
             )
-        """)
+        """
 
-        connection.execute("""
+    with get_connection() as connection:
+        _execute(connection, ticks_schema)
+
+        _execute(connection, """
             CREATE INDEX IF NOT EXISTS idx_ticks_symbol_id
             ON ticks(symbol, id)
         """)
 
-        connection.execute("""
+        _execute(connection, """
             CREATE TABLE IF NOT EXISTS import_batches (
                 checksum TEXT PRIMARY KEY,
                 source_file TEXT NOT NULL,
@@ -56,7 +107,7 @@ def save_tick(timestamp, symbol, price, digit):
         raise ValueError("Digit must be between 0 and 9")
 
     with get_connection() as connection:
-        connection.execute("""
+        _execute(connection, """
             INSERT INTO ticks (timestamp, symbol, price, digit)
             VALUES (?, ?, ?, ?)
         """, (timestamp, symbol, float(price), digit))
@@ -65,14 +116,14 @@ def save_tick(timestamp, symbol, price, digit):
 def load_ticks(symbol=None):
     with get_connection() as connection:
         if symbol:
-            rows = connection.execute("""
+            rows = _execute(connection, """
                 SELECT timestamp, symbol, price, digit
                 FROM ticks
                 WHERE symbol = ?
                 ORDER BY id
             """, (symbol,)).fetchall()
         else:
-            rows = connection.execute("""
+            rows = _execute(connection, """
                 SELECT timestamp, symbol, price, digit
                 FROM ticks
                 ORDER BY id
@@ -86,7 +137,8 @@ def import_csv(csv_path):
         checksum = hashlib.sha256(source.read()).hexdigest()
 
     with get_connection() as connection:
-        existing = connection.execute(
+        existing = _execute(
+            connection,
             "SELECT imported_records FROM import_batches WHERE checksum = ?",
             (checksum,)
         ).fetchone()
@@ -103,6 +155,7 @@ def import_csv(csv_path):
             reader = csv.DictReader(source)
 
             required = {"timestamp", "symbol", "price", "digit"}
+
             if not reader.fieldnames or not required.issubset(reader.fieldnames):
                 raise ValueError("CSV is missing required columns")
 
@@ -116,14 +169,14 @@ def import_csv(csv_path):
                 if not 0 <= digit <= 9:
                     raise ValueError("Invalid digit in CSV")
 
-                connection.execute("""
+                _execute(connection, """
                     INSERT INTO ticks (timestamp, symbol, price, digit)
                     VALUES (?, ?, ?, ?)
                 """, (row["timestamp"], row["symbol"], price, digit))
 
                 imported += 1
 
-        connection.execute("""
+        _execute(connection, """
             INSERT INTO import_batches
             (checksum, source_file, imported_records)
             VALUES (?, ?, ?)
@@ -138,12 +191,14 @@ def import_csv(csv_path):
 def get_tick_count(symbol=None):
     with get_connection() as connection:
         if symbol:
-            row = connection.execute(
+            row = _execute(
+                connection,
                 "SELECT COUNT(*) AS total FROM ticks WHERE symbol = ?",
                 (symbol,)
             ).fetchone()
         else:
-            row = connection.execute(
+            row = _execute(
+                connection,
                 "SELECT COUNT(*) AS total FROM ticks"
             ).fetchone()
 
